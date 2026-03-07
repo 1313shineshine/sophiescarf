@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>蘇菲圍巾高級助手 旗艦版</title>
+    <title>蘇菲圍巾高級助手 旗艦最終版</title>
     <style>
         :root { 
             --bg: #fdfaf5; --card: #ffffff; --text: #5d4037; --accent: #d84315; 
@@ -47,7 +47,6 @@
 
         .log-list { max-height: 150px; overflow-y: auto; font-size: 0.9rem; }
         .log-item { background: #fdfbf9; padding: 12px; border-radius: 12px; margin-bottom: 8px; border-left: 5px solid #dcb08b; display: flex; justify-content: space-between; }
-        .log-back { border-left-color: #ff4d4f; background: #fff1f0; }
         .config-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 0.95rem; }
         input { width: 65px; padding: 10px; border-radius: 12px; border: 1px solid #d7ccc8; text-align: center; font-size: 1.1rem; }
         .set-btn { background: #8d6e63; color: white; padding: 10px 18px; border-radius: 12px; border: none; font-weight: bold; }
@@ -57,6 +56,7 @@
 
 <div class="container">
     <div class="card main-display">
+        <div class="percent-tag" id="percentText">0%</div>
         <div id="sideTag" class="side-label">RS/WS</div>
         <div style="color: #bbb; font-size: 0.75rem; letter-spacing: 3px; margin-top: 5px;">CURRENT ROW</div>
         <div class="row-num" id="curR">1</div>
@@ -80,7 +80,7 @@
     <div class="card" style="padding: 10px;">
         <div class="table-header-flex">
             <span style="font-weight: bold; color: #8d6e63;">織圖總覽</span>
-            <span class="percent-tag" id="percentText">0%</span>
+            <span class="percent-tag" id="percentTextInner">0%</span>
         </div>
         <div class="scroll-container" id="scrollBox">
             <table class="ref-table">
@@ -107,7 +107,6 @@
     const STORAGE_KEY = "Sophie_Stable_Progress";
     let wakeLock = null;
 
-    // --- 1. 數據存取 ---
     try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
         if (saved) {
@@ -118,43 +117,38 @@
 
     function setM() { maxS = parseInt(document.getElementById('maxIn').value); save(); render(); }
     function setR() { r = parseInt(document.getElementById('curRowIn').value); save(); render(); }
+    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify({ r, maxS, logs: logs.slice(0, 50), totalMs })); }
 
-    function save() {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ r, maxS, logs: logs.slice(0, 50), totalMs }));
-    }
-
-    // --- 2. 核心邏輯修正 (8排平織期) ---
+    // --- 核心邏輯：正面加減針 + 隔8排週期 ---
     function getInfo(row) {
         let sts = 6, act = "-", displaySts = "", step1 = "", step2 = "", step3 = "";
         let incRows = (maxS - 6) * 8; 
         const isRS = (row % 2 === 0);
-        const WS_L2 = "織下針至最後3針，";
-        const WS_L3 = "線帶至針前，反針方向滑3針。";
-        const RS_L2 = "織下針至最後3針，";
-        const RS_L3 = "線帶至針前，反針方向滑3針。";
+        const WS_L = ["織下針至最後3針，", "線帶至針前，反針方向滑3針。"];
+        const RS_L = ["織下針至最後3針，", "線帶至針前，反針方向滑3針。"];
 
         if (row <= incRows) {
             let b = 6 + Math.floor((row - 1) / 8);
             if (row % 8 === 0) {
                 act = "加針"; displaySts = `${b} ⮕ ${b+1}`; sts = b+1;
                 step1 = "★ 加針排"; step2 = "織2下針，kfb加針，下針織到剩3針，"; step3 = "線帶至針前，反針方向滑3針。";
-            } else { sts = b; displaySts = sts; step2 = WS_L2; step3 = WS_L3; }
-        } else if (row <= incRows + 8) {
+            } else { sts = b; displaySts = sts; step2 = WS_L[0]; step3 = WS_L[1]; }
+        } else if (row < incRows + 8) {
             sts = maxS; displaySts = sts.toString();
-            step1 = "平織區"; step2 = (isRS ? RS_L2 : WS_L2); step3 = (isRS ? RS_L3 : WS_L3);
+            step1 = "平織區"; step2 = (isRS ? RS_L[0] : WS_L[0]); step3 = (isRS ? RS_L[1] : WS_L[1]);
         } else {
-            let relativeRow = row - (incRows + 8); 
-            let d = Math.floor((relativeRow - 1) / 8);
+            // 從第 184 排 (或 incRows + 8) 開始第一次減針
+            let decOffset = row - (incRows + 8); 
+            let d = Math.floor(decOffset / 8);
             let b = maxS - d;
-            if ((relativeRow - 1) % 8 === 0) {
+            if (decOffset % 8 === 0) {
                 act = "減針"; displaySts = `${b} ⮕ ${b-1}`; sts = b-1;
                 step1 = "★ 減針排"; step2 = "織3下針，skp減針，下針織到剩3針，"; step3 = "線帶至針前，反針方向滑3針。";
-            } else { sts = b; displaySts = sts.toString(); step2 = (isRS ? RS_L2 : WS_L2); step3 = (isRS ? RS_L3 : WS_L3); }
+            } else { sts = b; displaySts = sts.toString(); step2 = (isRS ? RS_L[0] : WS_L[0]); step3 = (isRS ? RS_L[1] : WS_L[1]); }
         }
         return { sts, act, displaySts, step1, step2, step3 };
     }
 
-    // --- 3. 動作控制 ---
     function move(dir) {
         const now = Date.now(); const diff = now - lastTime;
         if (dir > 0) {
@@ -167,32 +161,27 @@
         lastTime = now; save(); render();
     }
 
-    // --- 4. 螢幕常亮 ---
     const requestWakeLock = async () => {
         try { if ('wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); } } catch (err) {}
     };
     document.addEventListener('click', () => { if (!wakeLock) requestWakeLock(); }, { once: true });
     document.addEventListener('visibilitychange', () => { if (wakeLock !== null && document.visibilityState === 'visible') requestWakeLock(); });
 
-    // --- 5. 渲染畫面 ---
     function render() {
         const info = getInfo(r);
         document.getElementById('curR').innerText = r;
         document.getElementById('curRowIn').value = r;
         document.getElementById('stsNum').innerHTML = info.displaySts;
-        
         const totalEstimate = (maxS - 6) * 16 + 8;
         const progress = Math.min(99, Math.round((r / totalEstimate) * 100));
         document.getElementById('percentText').innerText = progress + "%";
-
+        document.getElementById('percentTextInner').innerText = progress + "%";
         document.getElementById('ins-1').innerText = info.step1;
         document.getElementById('ins-2').innerText = info.step2;
         document.getElementById('ins-3').innerText = info.step3;
-
         document.getElementById('sideTag').innerText = (r % 2 === 0) ? "RS (正面)" : "WS (反面)";
         document.body.className = info.act === "加針" ? "is-inc" : (info.act === "減針" ? "is-dec" : "");
         document.getElementById('totalTime').innerText = `總編織時長：${Math.round(totalMs/60000)} 分鐘`;
-
         let html = "";
         for(let i=1; i <= r + 50; i++) {
             let inf = getInfo(i);
@@ -204,7 +193,6 @@
         const target = document.getElementById(`row-${r}`);
         const box = document.getElementById('scrollBox');
         if (target) { box.scrollTop = target.offsetTop - (target.offsetHeight * 3); }
-
         document.getElementById('logList').innerHTML = logs.map(l => `
             <div class="log-item ${l.type==='back'?'log-back':''}">
                 <span>${l.type==='next'?'✅ 完成 Row '+l.r : '◀️ 退回 Row '+l.r}</span>
