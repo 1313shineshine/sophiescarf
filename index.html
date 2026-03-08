@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>蘇菲圍巾高級助手 旗艦最終版</title>
+    <title>蘇菲圍巾助手 Pro</title>
     <style>
         :root { 
             --bg: #fdfaf5; --card: #ffffff; --text: #5d4037; --accent: #d84315; 
@@ -56,7 +56,6 @@
 
 <div class="container">
     <div class="card main-display">
-        <div class="percent-tag" id="percentText">0%</div>
         <div id="sideTag" class="side-label">RS/WS</div>
         <div style="color: #bbb; font-size: 0.75rem; letter-spacing: 3px; margin-top: 5px;">CURRENT ROW</div>
         <div class="row-num" id="curR">1</div>
@@ -93,7 +92,7 @@
     <div class="card">
         <div style="font-weight: bold; margin-bottom: 10px;">編織日誌紀錄</div>
         <div id="totalTime" style="color: var(--accent); font-weight: bold; margin-bottom: 15px;">總時長：0 分鐘</div>
-        <div class="log-list" id="logList"></div>
+        <div id="logList" class="log-list"></div>
     </div>
 
     <div class="card">
@@ -119,32 +118,47 @@
     function setR() { r = parseInt(document.getElementById('curRowIn').value); save(); render(); }
     function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify({ r, maxS, logs: logs.slice(0, 50), totalMs })); }
 
-    // --- 核心邏輯：正面加減針 + 隔8排週期 ---
+    // --- 萬能精準邏輯 ---
     function getInfo(row) {
         let sts = 6, act = "-", displaySts = "", step1 = "", step2 = "", step3 = "";
-        let incRows = (maxS - 6) * 8; 
         const isRS = (row % 2 === 0);
-        const WS_L = ["織下針至最後3針，", "線帶至針前，反針方向滑3針。"];
-        const RS_L = ["織下針至最後3針，", "線帶至針前，反針方向滑3針。"];
+        const incEndRow = (maxS - 6) * 8; // 加針結束的那一排
+        const flatEndRow = incEndRow + 7; // 平織最後一排 (因為第 8 排也就是 184 要減針)
 
-        if (row <= incRows) {
-            let b = 6 + Math.floor((row - 1) / 8);
+        const WS_TEXT = ["織下針至最後3針，", "線帶至針前，反針方向滑3針。"];
+        const RS_TEXT = ["織下針至最後3針，", "線帶至針前，反針方向滑3針。"];
+
+        if (row <= incEndRow) {
+            // 1. 加針區
+            let currentBase = 6 + Math.floor((row - 1) / 8);
             if (row % 8 === 0) {
-                act = "加針"; displaySts = `${b} ⮕ ${b+1}`; sts = b+1;
+                act = "加針"; sts = currentBase + 1; displaySts = `${currentBase} ⮕ ${sts}`;
                 step1 = "★ 加針排"; step2 = "織2下針，kfb加針，下針織到剩3針，"; step3 = "線帶至針前，反針方向滑3針。";
-            } else { sts = b; displaySts = sts; step2 = WS_L[0]; step3 = WS_L[1]; }
-        } else if (row < incRows + 8) {
+            } else {
+                sts = currentBase; displaySts = sts.toString();
+                step2 = isRS ? RS_TEXT[0] : WS_TEXT[0]; step3 = isRS ? RS_TEXT[1] : WS_TEXT[1];
+            }
+        } 
+        else if (row <= flatEndRow) {
+            // 2. 平織區
             sts = maxS; displaySts = sts.toString();
-            step1 = "平織區"; step2 = (isRS ? RS_L[0] : WS_L[0]); step3 = (isRS ? RS_L[1] : WS_L[1]);
-        } else {
-            // 從第 184 排 (或 incRows + 8) 開始第一次減針
-            let decOffset = row - (incRows + 8); 
-            let d = Math.floor(decOffset / 8);
-            let b = maxS - d;
-            if (decOffset % 8 === 0) {
-                act = "減針"; displaySts = `${b} ⮕ ${b-1}`; sts = b-1;
+            step1 = "平織區"; step2 = isRS ? RS_TEXT[0] : WS_TEXT[0]; step3 = isRS ? RS_TEXT[1] : WS_TEXT[1];
+        } 
+        else {
+            // 3. 減針區 (從 row = incEndRow + 8 開始，例如 176+8=184)
+            let decRelativeRow = row - (incEndRow + 8);
+            let timesReduced = Math.floor(decRelativeRow / 8) + 1;
+            let currentStsBeforeThisCycle = maxS - (timesReduced - 1);
+
+            if (decRelativeRow % 8 === 0) {
+                act = "減針"; sts = currentStsBeforeThisCycle - 1; displaySts = `${currentStsBeforeThisCycle} ⮕ ${sts}`;
                 step1 = "★ 減針排"; step2 = "織3下針，skp減針，下針織到剩3針，"; step3 = "線帶至針前，反針方向滑3針。";
-            } else { sts = b; displaySts = sts.toString(); step2 = (isRS ? RS_L[0] : WS_L[0]); step3 = (isRS ? RS_L[1] : WS_L[1]); }
+            } else {
+                sts = currentStsBeforeThisCycle - 1; displaySts = sts.toString();
+                step1 = ""; step2 = isRS ? RS_TEXT[0] : WS_TEXT[0]; step3 = isRS ? RS_TEXT[1] : WS_TEXT[1];
+            }
+            // 避免減針到負數
+            if (sts < 6) { sts = 6; displaySts = "6"; act = "完成"; step1 = "即將結束"; }
         }
         return { sts, act, displaySts, step1, step2, step3 };
     }
@@ -172,16 +186,18 @@
         document.getElementById('curR').innerText = r;
         document.getElementById('curRowIn').value = r;
         document.getElementById('stsNum').innerHTML = info.displaySts;
+        
         const totalEstimate = (maxS - 6) * 16 + 8;
         const progress = Math.min(99, Math.round((r / totalEstimate) * 100));
-        document.getElementById('percentText').innerText = progress + "%";
         document.getElementById('percentTextInner').innerText = progress + "%";
+        
         document.getElementById('ins-1').innerText = info.step1;
         document.getElementById('ins-2').innerText = info.step2;
         document.getElementById('ins-3').innerText = info.step3;
         document.getElementById('sideTag').innerText = (r % 2 === 0) ? "RS (正面)" : "WS (反面)";
         document.body.className = info.act === "加針" ? "is-inc" : (info.act === "減針" ? "is-dec" : "");
         document.getElementById('totalTime').innerText = `總編織時長：${Math.round(totalMs/60000)} 分鐘`;
+        
         let html = "";
         for(let i=1; i <= r + 50; i++) {
             let inf = getInfo(i);
